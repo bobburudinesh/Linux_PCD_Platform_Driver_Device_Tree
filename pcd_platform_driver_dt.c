@@ -19,7 +19,7 @@
 loff_t pcd_lseek(struct file *filp, loff_t offset, int whence);
 ssize_t pcd_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos);
 ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos);
-int pcd_open(struct inode *inode, struct file *flip);
+int pcd_open(struct inode *inode, struct file *filp);
 int pcd_release(struct inode *inode, struct file *filp);
 int check_permission(int dev_perm, int acc_mode); 
 int pcd_platform_driver_probe(struct platform_device *pdev);
@@ -116,9 +116,32 @@ ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff
 	/*return number of bytes successfully written*/
 	return 0;
 }
-int pcd_open(struct inode *inode, struct file *flip){
+int pcd_open(struct inode *inode, struct file *filp){
+
+	int ret;
+
+	int minor_n;
+	
+	struct pcdev_private_data *pcdev_data;
+
+	/*find out on which device file open was attempted by the user space */
+
+	minor_n = MINOR(inode->i_rdev);
+	pr_info("minor access = %d\n",minor_n);
+
+	/*get device's private data structure */
+	pcdev_data = container_of(inode->i_cdev,struct pcdev_private_data,cdev);
+
+	/*to supply device private data to other methods of the driver */
+	filp->private_data = pcdev_data;
+		
+	/*check permission */
+	ret = check_permission(pcdev_data->pdata.perm,filp->f_mode);
+
+	(!ret)?pr_info("open was successful\n"):pr_info("open was unsuccessful\n");
+
 	pr_info("open was successful\n");
-	return 0;
+	return ret;
 }
 int pcd_release(struct inode *inode, struct file *filp){
 	pr_info("release was successful\n");
@@ -170,11 +193,11 @@ struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev) {
 		return ERR_PTR(-EINVAL);
 	}
 
-	if(of_property_read_u32(dev_node, "org, size", &pdata->size)) {
+	if(of_property_read_u32(dev_node, "org,size", &pdata->size)) {
 		dev_info(dev,"Missing size property\n");
 		return ERR_PTR(-EINVAL);
 	}
-        if(of_property_read_u32(dev_node, "org, perm", &pdata->perm)) {
+        if(of_property_read_u32(dev_node, "org,perm", &pdata->perm)) {
                 dev_info(dev,"Missing perm property\n");
                 return ERR_PTR(-EINVAL);
         }
@@ -208,7 +231,7 @@ int pcd_platform_driver_probe(struct platform_device *pdev)
                 	return PTR_ERR(pdata);
 
 		}
-		driver_data =(int)match->data;
+		driver_data =(long)match->data;
 	} else {
 		pdata = (struct pcdev_platform_data*)dev_get_platdata(dev);
 		driver_data = pdev->id_entry->driver_data;
@@ -218,7 +241,7 @@ int pcd_platform_driver_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/*2. Dynamically allocate memory for the device private data*/
-	dev_data = devm_kzalloc(&pdev->dev, sizeof(struct pcdev_platform_data), GFP_KERNEL);
+	dev_data = devm_kzalloc(&pdev->dev, sizeof(*dev_data), GFP_KERNEL);
 	if(!dev_data) {
 		dev_info(dev,"Cannot allocate memory\n");
 		return -ENOMEM;
