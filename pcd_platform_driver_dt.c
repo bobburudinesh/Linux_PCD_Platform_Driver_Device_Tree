@@ -106,28 +106,93 @@ int check_permission(int dev_perm, int acc_mode) {
 }
 
 loff_t pcd_lseek(struct file *filp, loff_t offset, int whence){
-	return 0;
+	/*Get max size from device platform data*/
+	struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)filp->private_data;
+	int max_size = pcdev_data->pdata.size;
+	loff_t temp;
+	pr_info("seek requested\n");
+	pr_info("Current file position : %lld\n", filp->f_pos);
+	switch(whence){
+		case SEEK_SET:
+			if(offset>max_size || offset < 0) {
+				return -EINVAL;
+			}
+			filp->f_pos = offset;
+		       break;
+		case SEEK_CUR:
+		       temp = filp->f_pos + offset;
+			if(temp > max_size || temp < 0) {
+				return -EINVAL;
+			}
+			filp->f_pos = temp;
+			break;
+		case SEEK_END:
+			temp = max_size + offset;
+			if(temp > max_size || temp < 0) {
+				return -EINVAL;
+			}
+			filp->f_pos = temp;
+			break;
+		default:
+			return -EINVAL;
+	};
+	pr_info("Updated file position : %lld\n", filp->f_pos);
+	return filp->f_pos;
 }
 ssize_t pcd_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos){
-	/*return number of bytes sucessfully read*/
-	return 0;
+        /*Get the max size from device platform data*/
+        struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)filp->private_data;
+        int max_size = pcdev_data->pdata.size;
+        pr_info("read requested for %zu bytes\n",count);
+	pr_info("Current file position : %lld\n", *f_pos);
+	/*Check if count has to be adjusted*/
+        if((*f_pos+count)>max_size) {
+                count = max_size - *f_pos;
+        }
+        /*Copy the data from user space to kernel space*/
+        if(copy_to_user(buff, pcdev_data->buffer+(*f_pos), count)){
+                return -EINVAL;
+        }
+        /*Update the file pointer*/
+        *f_pos += count;
+        /*return number of bytes successfully read*/
+	pr_info("successfully read %zu bytes\n", count);
+	pr_info("updated file position : %lld\n", *f_pos);
+        return count;
 }
 ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos){
+	
+	/*Get the max size from device platform data*/
+	struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)filp->private_data;
+	int max_size = pcdev_data->pdata.size;
+	pr_info("Write requested for %zu bytes\n", count);
+	pr_info("Current file position : %lld\n", *f_pos);
+        /*Check if count has to be adjusted*/
+	if((*f_pos+count)>max_size) {
+		count = max_size - *f_pos;
+	}	
+	/*Copy the data from user space to kernel space*/
+	if(copy_from_user(pcdev_data->buffer+(*f_pos), buff, count)){
+		return -EINVAL;
+	}
+	/*Update the file pointer*/
+	*f_pos += count;
+	pr_info("Successfully written %zu bytes\n", count);
+	pr_info("Updated file position : %lld\n", *f_pos);
 	/*return number of bytes successfully written*/
-	return 0;
+	return count;
 }
 int pcd_open(struct inode *inode, struct file *filp){
 
 	int ret;
 
-	int minor_n;
+	int minor_num;
 	
 	struct pcdev_private_data *pcdev_data;
 
 	/*find out on which device file open was attempted by the user space */
-
-	minor_n = MINOR(inode->i_rdev);
-	pr_info("minor access = %d\n",minor_n);
+	minor_num = MINOR(inode->i_rdev);
+	pr_info("minor number = %d\n",minor_num);
 
 	/*get device's private data structure */
 	pcdev_data = container_of(inode->i_cdev,struct pcdev_private_data,cdev);
