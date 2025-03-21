@@ -114,21 +114,21 @@ loff_t pcd_lseek(struct file *filp, loff_t offset, int whence){
 	pr_info("Current file position : %lld\n", filp->f_pos);
 	switch(whence){
 		case SEEK_SET:
-			if(offset>max_size || offset < 0) {
+			if((offset>max_size) || (offset < 0)) {
 				return -EINVAL;
 			}
 			filp->f_pos = offset;
 		       break;
 		case SEEK_CUR:
 		       temp = filp->f_pos + offset;
-			if(temp > max_size || temp < 0) {
+			if((temp > max_size) || (temp < 0)) {
 				return -EINVAL;
 			}
 			filp->f_pos = temp;
 			break;
 		case SEEK_END:
 			temp = max_size + offset;
-			if(temp > max_size || temp < 0) {
+			if((temp > max_size) || (temp < 0)) {
 				return -EINVAL;
 			}
 			filp->f_pos = temp;
@@ -151,7 +151,7 @@ ssize_t pcd_read(struct file *filp, char __user *buff, size_t count, loff_t *f_p
         }
         /*Copy the data from user space to kernel space*/
         if(copy_to_user(buff, pcdev_data->buffer+(*f_pos), count)){
-                return -EINVAL;
+                return -EFAULT;
         }
         /*Update the file pointer*/
         *f_pos += count;
@@ -170,10 +170,14 @@ ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff
         /*Check if count has to be adjusted*/
 	if((*f_pos+count)>max_size) {
 		count = max_size - *f_pos;
+	}
+	if(!count){
+		pr_err("No space left on device\n");
+		return -ENOMEM;
 	}	
 	/*Copy the data from user space to kernel space*/
 	if(copy_from_user(pcdev_data->buffer+(*f_pos), buff, count)){
-		return -EINVAL;
+		return -EFAULT;
 	}
 	/*Update the file pointer*/
 	*f_pos += count;
